@@ -1,0 +1,156 @@
+#define UartRevBufMaxVal              64                         //buff最大长度
+
+#define PACKT_ENDBufMinVal       9                         //接收的最小长度
+
+uint8_t UartrecStart = 0;
+
+/**********************************************************************
+ * 函数名称： Uart_com
+ * 功能描述： 数据处理函数        判断数据是否正确 
+ * 输入参数： UartRevBuf[] 要处理的数据buf        UartRevEnd数据长度
+ * 输出参数： 
+ * 返 回 值： 0
+2 byte    2 byte    1 byte    2 byte        N byte    2byte    1 byte
+包头    包标识    指令码    参数长度    参数    校验码      包尾
+FA     FB    01    0    00        xxL xxH        xxL xxH     xxL xxH    BB
+
+ ***********************************************************************/
+
+void UartDataComHandler(uint8_t *UarstRcvBuf,uint8_t UarstRcvEnd)
+
+{
+
+   uint8_t data_len;                                                            //首指针到末指针的长度
+    uint8_t i,j;
+    uint8_t num;
+
+    unsigned int cmd_len;                                                       //命令长度
+    unsigned int chs,chs_data;                                                   //指令包校验码 和计算出来的校验码
+    uint8_t CmdBuf[20] = {0};                                                    //复制指令包数据
+    uint8_t Command_Packet_data[]={0xFA,0xFB,0X01,0x00};                           //包头
+    num = UarstRcvEnd;                                                            //数据存储区末尾指针
+
+if( num < UartrecStart )                                                    //如果指纹末尾指纹小于首指纹
+    {
+        data_len = num + UartRevBufMaxVal - UartrecStart;                        
+    }
+    else
+    {
+        data_len = num  - UartrecStart;
+    }
+    if( data_len > PACKT_ENDBufMinVal )                                                //数据包大于最小包长
+    {
+        for( i = 0 ; i < data_len ; i++ )
+        {
+            if( UarstRcvBuf[UartrecStart] == Command_Packet_data[0] )                //判断包头
+            {
+
+                if( data_len - i > PACKT_ENDBufMinVal )                                
+                {
+                    num = UartrecStart+PACKT_DLEN_L_NUM ;                            
+                    if( num >= UartRevBufMaxVal )
+                    {
+                        num -= UartRevBufMaxVal;
+                    }
+                    cmd_len = UarstRcvBuf[num];
+                    num = UartrecStart+PACKT_DLEN_H_NUM;
+                    if( num >= UartRevBufMaxVal )
+                    {
+                        num -= UartRevBufMaxVal;
+                    }
+
+                    cmd_len +=  (UarstRcvBuf[num]+9);                                //完整包长度
+                    if( data_len - i > cmd_len)
+                    {
+                        num = UartrecStart+cmd_len ;
+                        if( num >= UartRevBufMaxVal )
+                        {
+                            num -= UartRevBufMaxVal;
+                        }
+                        if( UarstRcvBuf[num] == 0xbb)                                　//包尾
+                        {
+                            for( j= 1;j < 4;j++ )
+                            {
+                                num = UartrecStart+j ;
+                                if( num >= UartRevBufMaxVal )
+                                {
+                                    num -= UartRevBufMaxVal;
+                                }
+                                if( UarstRcvBuf[num] != Command_Packet_data[j] )                //包头和包标识判断
+                                {
+                                    j = 20;
+                                }
+                            }
+                            if( j > 4)
+                            {
+                                UartrecStart ++;
+                            }
+                            else
+                            {
+                                chs = 0;
+                                for( j = 0; j <(cmd_len-2);j++ )
+                                {
+                                    num = UartrecStart+j ;
+                                    if( num >= UartRevBufMaxVal )
+                                    {
+                                        num -= UartRevBufMaxVal;
+                                    }
+                                    chs +=  UarstRcvBuf[num];
+                                }    
+                                num = UartrecStart+cmd_len -2;
+                                if( num >= UartRevBufMaxVal )
+                                {
+                                    num -= UartRevBufMaxVal;
+                                }
+                                chs_data = UarstRcvBuf[num];
+                                num = UartrecStart+cmd_len -1;
+                                if( num >= UartRevBufMaxVal )
+                                {
+                                    num -= UartRevBufMaxVal;
+                                }
+                                chs_data += UarstRcvBuf[num]<<8;
+                                if( chs != chs_data)                        //校验码比对
+                                {
+                                    UartrecStart ++;
+                                }
+                                else
+                                {
+                                    for(j = 0;j<cmd_len;j++)
+                                    {
+                                        num = UartrecStart+j;
+                                        if( num >= UartRevBufMaxVal )
+                                        {
+                                            num -= UartRevBufMaxVal;
+                                        }
+                                        CmdBuf[j] = UarstRcvBuf[num];
+                                    }
+                                    UartComHandler(CmdBuf,cmd_len+1);                    //进入命令执行程序
+                                    UartrecStart += cmd_len;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            UartrecStart ++;
+                        }
+                        if( UartrecStart >= UartRevBufMaxVal )
+                        {
+                            UartrecStart -= UartRevBufMaxVal;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                UartrecStart ++;
+            }
+            if( UartrecStart >= UartRevBufMaxVal )
+            {
+                UartrecStart -= UartRevBufMaxVal;
+            }
+        }
+    }
+}
+
+
+}
